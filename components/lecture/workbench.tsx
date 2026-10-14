@@ -1,0 +1,80 @@
+"use client";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { BookOpen, Plus, Search, ChevronDown, ArrowUpRight, ArrowRight, FileText, Layers3, CheckCheck, Sparkles, Menu, X, ShieldCheck, Download, RotateCcw, Settings2, NotebookPen, Clock3, FolderOpen } from "lucide-react";
+import { repo } from "@/lib/lecture/store";
+import { current, type NoteRecord, type Draft } from "@/lib/lecture/schema";
+import { demos } from "@/lib/lecture/fixtures";
+import { Button, Badge, Banner, Empty, Modal } from "./primitives";
+import { NewNote } from "./new-note";
+import { JobPage } from "./job-page";
+import { NotePage } from "./note-page";
+import { EditorPage } from "./editor-page";
+import { ExportPage } from "./export-page";
+
+export type Notify = (message: string, error?: boolean) => void;
+export function Workbench() {
+  const path = usePathname(), router = useRouter(), params = useSearchParams();
+  const [notes, setNotes] = useState<NoteRecord[]>([]), [drafts, setDrafts] = useState<Draft[]>([]);
+  const [loaded, setLoaded] = useState(false), [error, setError] = useState("");
+  const [toast, setToast] = useState<{ message: string; error?: boolean } | null>(null);
+  const [mobile, setMobile] = useState(false), [help, setHelp] = useState(false);
+  const [cap, setCap] = useState({ generation: false, vision: false, model: null as string | null });
+  const notify = useCallback<Notify>((message, error) => setToast({ message, error }), []);
+  const reload = useCallback(async () => { try { const [n, d] = await Promise.all([repo.notes(), repo.drafts()]); setNotes(n.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))); setDrafts(d.filter(x => x.sources.length)); setLoaded(true); setError(""); } catch (e) { setError(e instanceof Error ? e.message : "无法读取本地笔记。"); } }, []);
+  useEffect(() => { reload(); const update = () => { void reload(); }; window.addEventListener("lecture-updated", update); return () => window.removeEventListener("lecture-updated", update); }, [reload, path]);
+  useEffect(() => { fetch("/api/capabilities").then(r => r.json()).then(data => setCap(data as { generation: boolean; vision: boolean; model: string | null })).catch(() => {}); }, []);
+  useEffect(() => { if (toast) { const t = setTimeout(() => setToast(null), 4500); return () => clearTimeout(t); } }, [toast]);
+  useEffect(() => setMobile(false), [path]);
+  const parts = path.split("/").filter(Boolean); const id = parts[1];
+  const isNew = path === "/notes/new"; const isJob = parts[0] === "jobs";
+  const title = isNew ? "新建笔记" : isJob ? "整理进度" : parts[2] === "edit" ? "编辑笔记" : parts[2] === "export" ? "导出笔记" : id ? "笔记工作台" : "我的笔记";
+  let page: ReactNode;
+  if (isNew) page = <NewNote key={params.toString()} cap={cap} notify={notify} />;
+  else if (isJob) page = <JobPage id={id} notify={notify} />;
+  else if (id && parts[2] === "edit") page = <EditorPage id={id} notify={notify} />;
+  else if (id && parts[2] === "export") page = <ExportPage id={id} notify={notify} />;
+  else if (id) page = <NotePage id={id} notify={notify} cap={cap} />;
+  else page = <Dashboard notes={notes} drafts={drafts} loaded={loaded} reload={reload} notify={notify} />;
+  return <div className="app-shell">
+    {mobile && <button className="mobile-scrim" aria-label="关闭导航" onClick={() => setMobile(false)} />}
+    <aside className={`sidebar ${mobile ? "mobile-open" : ""}`}>
+      <a className="brand" href="/notes" onClick={e => { e.preventDefault(); router.push("/notes"); }}><span className="brand-mark"><BookOpen size={23} /></span><span>Lecture<span className="brand-two">2</span>Notes<small>让知识，有迹可循</small></span></a>
+      <Button className="sidebar-new" onClick={() => router.push("/notes/new")}><Plus size={18} />新建笔记<span className="keycap">N</span></Button>
+      <div className="nav-label">学习空间</div>
+      <button className={`nav-item ${!isNew && !isJob ? "active" : ""}`} onClick={() => router.push("/notes")}><NotebookPen size={18} />我的笔记<span className="nav-count">{notes.length}</span></button>
+      <button className="nav-item" onClick={() => { router.push("/notes"); setTimeout(() => document.getElementById("samples")?.scrollIntoView({ behavior: "smooth" }), 200); }}><Layers3 size={18} />示例素材<Badge tone="purple">3</Badge></button>
+      <div className="sidebar-divider" /><div className="nav-label">最近的笔记</div>
+      <div className="recent-list">{notes.slice(0, 4).map(n => <button key={n.id} onClick={() => router.push(`/notes/${n.id}`)}><span className="recent-dot" />{n.title}</button>)}{!notes.length && <p>第一份好笔记，从这里开始。</p>}</div>
+      <div className="sidebar-bottom"><div className="local-card"><ShieldCheck size={19} /><div><strong>你的资料，留在本地</strong><p>当前浏览器保存 · 随时导出备份</p></div></div><button className="nav-item" onClick={() => setHelp(true)}><Settings2 size={17} />使用说明与服务状态</button><div className="sidebar-footer"><span className="avatar">L</span><div><strong>我的学习空间</strong><span>{cap.generation ? "真实模型已就绪" : "本地演示版"}</span></div><span className="online-dot" /></div></div>
+    </aside>
+    <div className="main-shell"><header className="topbar"><div className="breadcrumb"><button className="icon-btn mobile-menu" aria-label="打开导航" onClick={() => setMobile(true)}><Menu size={21} /></button><span>学习空间</span><span className="crumb-slash">/</span><strong>{title}</strong></div><div className="topbar-right"><span className="local-status"><span />本地已连接</span><button className="icon-btn" aria-label="使用说明" onClick={() => setHelp(true)}><BookOpen size={18} /></button><span className="avatar small">L</span></div></header>
+      <main className="main-content">{error && <Banner tone="error">{error}<button className="text-btn" onClick={reload}>重新读取</button></Banner>}{page}</main><footer className="main-footer"><span>Lecture2Notes · 把课堂素材，变成你的知识</span><span>整理 · 理解 · 复习</span></footer>
+    </div>
+    {toast && <div className={`toast ${toast.error ? "toast-error" : ""}`} role="status">{toast.message}<button aria-label="关闭提示" onClick={() => setToast(null)}><X size={15} /></button></div>}
+    {help && <Modal title="你的学习工作台" close={() => setHelp(false)}><div className="modal-body"><Banner>笔记保存在当前浏览器。清理浏览器数据会删除本地资料，请通过 JSON 导出备份。</Banner><h3>先体验，再整理自己的材料</h3><p>三组样例展示两种整理模式。演示结果始终带有标记；任意文字的演示仅进行原文分段，不做 AI 语义理解。</p><h3>服务状态</h3><div className="status-line"><span>文字与文本型 PDF 提取</span><Badge tone="green">可用</Badge></div><div className="status-line"><span>真实模型生成</span><Badge tone={cap.generation ? "green" : "amber"}>{cap.generation ? cap.model : "尚未配置"}</Badge></div><div className="status-line"><span>任意图片识别</span><Badge tone={cap.vision ? "green" : "amber"}>{cap.vision ? "可用" : "尚未配置"}</Badge></div><p className="muted">真实模式会将本次材料发送到服务端配置的模型；本地预览不会自动发送。演示版不需要 API Key。</p><Button onClick={() => setHelp(false)}>知道了</Button></div></Modal>}
+  </div>;
+}
+
+function Dashboard({ notes, drafts, loaded, reload, notify }: { notes: NoteRecord[]; drafts: Draft[]; loaded: boolean; reload: () => Promise<void>; notify: Notify }) {
+  const router = useRouter(); const [search, setSearch] = useState(""), [filter, setFilter] = useState("all"), [sort, setSort] = useState("new");
+  const [deleteTarget, setDeleteTarget] = useState<NoteRecord | null>(null);
+  const [backup, setBackup] = useState<unknown>(null);
+  const visible = notes.filter(n => [n.title, n.course, ...n.tags].join(" ").toLowerCase().includes(search.toLowerCase()) && (filter === "all" || current(n).mode === filter)).sort((a, b) => sort === "new" ? b.updatedAt.localeCompare(a.updatedAt) : a.title.localeCompare(b.title, "zh"));
+  const unresolved = notes.reduce((n, x) => n + current(x).content.unresolvedItems.filter(u => u.status === "open").length, 0);
+  const courses = new Set(notes.map(n => n.course).filter(Boolean)).size;
+  useEffect(() => { const key = (e: KeyboardEvent) => { if (e.key.toLowerCase() === "n" && !["INPUT", "TEXTAREA", "SELECT"].includes((e.target as HTMLElement)?.tagName) && !e.metaKey && !e.ctrlKey) router.push("/notes/new"); }; document.addEventListener("keydown", key); return () => document.removeEventListener("keydown", key); }, [router]);
+  return <div className="dashboard page-enter">
+    <section className="welcome"><div><div className="eyebrow"><span className="tiny-line" />让每一堂课，都成为积累</div><h1>把课堂的零散，<br />整理成<span>你的知识。</span></h1><p>截图、课件、随手记。把材料交给我们，<br className="desktop-break" />留更多时间给理解和思考。</p><div className="welcome-actions"><Button onClick={() => router.push("/notes/new")}><Plus size={18} />开始整理<ArrowRight size={16} /></Button><button className="link-button" onClick={() => router.push("/notes/new?demo=calculus")}>用示例体验<Sparkles size={15} /></button></div><div className="hero-proof"><ShieldCheck size={14} />来源可核对<span>·</span>内容可编辑<span>·</span>随时可导出</div></div><div className="hero-art" aria-hidden="true"><div className="art-orbit orbit-one" /><div className="art-orbit orbit-two" /><div className="art-small-note"><span>课堂灵感</span><i /><i /><i /><b>f′(x)</b></div><div className="art-note"><div className="art-note-top"><span className="art-dot" /><span>一堂课的知识脉络</span><CheckCheck size={16} /></div><h3>从理解，到掌握。</h3><div className="art-line wide" /><div className="art-line" /><div className="art-highlight"><span />关键概念，清晰串联</div><div className="art-check"><CheckCheck size={15} />保留每一个重要条件</div><div className="art-line short" /><div className="art-pills"><span>摘要</span><span>知识块</span><span>复习</span></div></div><div className="floating-chip chip-one"><Sparkles size={14} />学习增强</div><div className="floating-chip chip-two"><Layers3 size={14} />零散 → 有序</div><span className="art-spark">✳</span></div></section>
+    <section className="stats-grid"><Stat label="我的笔记" value={notes.length} sub="每一份，都是知识的积累" icon={<NotebookPen size={21} />} tone="purple" /><Stat label="学习课程" value={courses} sub="让不同知识，各有归处" icon={<FolderOpen size={21} />} tone="green" /><Stat label="待确认内容" value={unresolved} sub={unresolved ? "回到来源，再确认一下" : "让不确定，有迹可循"} icon={<CheckCheck size={21} />} tone="amber" /></section>
+    <section className="library"><div className="section-heading"><div><h2>我的笔记<span className="heading-count">{notes.length}</span></h2><p>把学过的，变成真正属于你的。</p></div><div className="library-actions"><label className="import-button"><RotateCcw size={15} />恢复备份<input type="file" accept="application/json,.json" hidden onChange={async e => { try { const f = e.target.files?.[0]; if (!f) return; if (f.size > 10 * 1024 * 1024) throw new Error("备份超过 10 MiB。"); const data = JSON.parse(await f.text()); try { const id = await repo.importVersion(data); await reload(); router.push(`/notes/${id}`); } catch (error) { if (error instanceof Error && error.message.includes("已存在")) setBackup(data); else throw error; } } catch (error) { notify(error instanceof Error ? error.message : "无法读取备份。", true); } e.target.value = ""; }} /></label><Button variant="secondary" onClick={() => router.push("/notes/new")}><Plus size={16} />新建笔记</Button></div></div>
+      <div className="filter-row"><div className="segmented">{[["all", "全部笔记"], ["faithful", "忠实整理"], ["enhanced", "学习增强"]].map(([v, text]) => <button className={filter === v ? "active" : ""} key={v} onClick={() => setFilter(v)}>{text}</button>)}</div><div className="search-sort"><label className="search-input"><Search size={16} /><input aria-label="搜索笔记" placeholder="搜索笔记、课程或标签" value={search} onChange={e => setSearch(e.target.value)} /><span>⌕</span></label><label className="sort-select"><select aria-label="排序" value={sort} onChange={e => setSort(e.target.value)}><option value="new">最近修改</option><option value="title">标题顺序</option></select><ChevronDown size={14} /></label></div></div>
+      {!loaded ? <div className="note-grid">{[1, 2, 3].map(i => <div className="note-card skeleton" key={i} />)}</div> : !visible.length ? <Empty title={search || filter !== "all" ? "没有找到匹配的笔记" : "第一份笔记，从这一堂课开始"} text={search || filter !== "all" ? "试试其他关键词，或清除筛选。" : "上传你的课堂材料，或用一份示例看看整理后的样子。"}><Button variant="secondary" onClick={() => { if (search || filter !== "all") { setSearch(""); setFilter("all"); } else router.push("/notes/new?demo=calculus"); }}>{search || filter !== "all" ? "清除筛选" : "体验示例"}<ArrowRight size={15} /></Button></Empty> : <div className="note-grid">{visible.map(n => { const v = current(n); return <article className="note-card" key={n.id}><button className="note-card-main" onClick={() => router.push(`/notes/${n.id}`)}><div className="card-top"><span className={`course-icon ${v.mode === "enhanced" ? "purple" : "green"}`}><FileText size={21} /></span><Badge tone={v.mode === "enhanced" ? "purple" : "neutral"}>{v.mode === "enhanced" ? "学习增强" : "忠实整理"}</Badge></div><h3>{n.title}</h3><span className="note-course">{n.course || "未分类课程"}</span><p className="note-excerpt">{v.content.summary.text}</p><div className="tags">{n.tags.map(t => <span key={t}>#{t}</span>)}{v.generation.provider === "mock" && <Badge tone="amber">演示</Badge>}</div></button><div className="note-card-footer"><span><Clock3 size={13} />{new Date(n.updatedAt).toLocaleDateString("zh-CN", { month: "short", day: "numeric" })} · {v.sources.length} 份素材</span><div><button className="icon-btn" aria-label={`导出${n.title}`} onClick={() => router.push(`/notes/${n.id}/export`)}><Download size={15} /></button><button className="icon-btn delete-small" aria-label={`删除${n.title}`} onClick={() => setDeleteTarget(n)}><X size={15} /></button></div></div></article>; })}</div>}
+    </section>
+    {!!drafts.length && <section className="draft-section"><h3>继续未完成的整理</h3>{drafts.map(d => <div className="draft-row" key={d.id}><FileText size={18} /><div><strong>{d.title || "未命名草稿"}</strong><span>{d.sources.length} 份材料 · 草稿已保存</span></div><button className="text-btn" onClick={() => router.push(`/notes/new?draft=${d.id}`)}>继续整理<ArrowRight size={14} /></button><button className="icon-btn" aria-label="删除草稿" onClick={async () => { await repo.removeDraft(d.id); await reload(); }}><X size={15} /></button></div>)}</section>}
+    <section id="samples" className="samples"><div className="section-heading"><div><div className="eyebrow small-eyebrow">A LITTLE INSPIRATION</div><h2>不知道从哪里开始？</h2><p>选一份课堂素材，看看知识如何变得清晰。</p></div><Badge tone="green">无需 API Key</Badge></div><div className="sample-grid">{demos.map(d => <button className={`sample-card ${d.color}`} key={d.id} onClick={() => router.push(`/notes/new?demo=${d.id}`)}><div className="sample-card-top"><span className="sample-symbol">{d.icon}</span><ArrowUpRight size={19} /></div><span className="sample-category">{d.category}</span><h3>{d.title}</h3><p>{d.description}</p><div className="sample-footer"><span>{d.course}</span><span>体验示例 →</span></div></button>)}</div></section>
+    {deleteTarget && <Modal title="删除这份笔记？" close={() => setDeleteTarget(null)}><div className="modal-body"><p>“{deleteTarget.title}”及其历史版本会从当前浏览器删除。请先导出需要的备份。</p><div className="modal-actions"><Button variant="secondary" onClick={() => setDeleteTarget(null)}>保留笔记</Button><Button variant="danger" onClick={async () => { try { await repo.deleteNote(deleteTarget.id); setDeleteTarget(null); await reload(); notify("笔记已删除。"); } catch { notify("删除失败，请重试。", true); } }}>确认删除</Button></div></div></Modal>}
+    {!!backup && <Modal title="这份笔记已经存在" close={() => setBackup(null)}><div className="modal-body"><p>可以把备份恢复为一份独立副本，不覆盖当前笔记。</p><Button onClick={async () => { try { const id = await repo.importVersion(backup, true); setBackup(null); await reload(); router.push(`/notes/${id}`); } catch (e) { notify(e instanceof Error ? e.message : "恢复失败。", true); } }}>另存副本</Button></div></Modal>}
+  </div>;
+}
+function Stat({ label, value, sub, icon, tone }: { label: string; value: number; sub: string; icon: ReactNode; tone: string }) { return <div className="stat"><div className="stat-top"><span>{label}</span><span className={`stat-icon ${tone}`}>{icon}</span></div><div className="stat-value">{value}<span>{label === "学习课程" ? "门" : label === "待确认内容" ? "项" : "份"}</span></div><p>{sub}</p></div>; }

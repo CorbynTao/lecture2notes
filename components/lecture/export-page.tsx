@@ -1,0 +1,20 @@
+"use client";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, Download, FileText, Braces, Printer, Check, Loader2, ShieldCheck } from "lucide-react";
+import { current } from "@/lib/lecture/schema";
+import { markdown, filename, download } from "@/lib/lecture/export";
+import { useNote } from "./note-page";
+import { Button, Badge, Banner, Empty } from "./primitives";
+import { Markdown } from "./markdown";
+import type { Notify } from "./workbench";
+export function ExportPage({ id, notify }: { id: string; notify: Notify }) {
+  const router = useRouter(); const { note, loaded, error } = useNote(id);
+  const [format, setFormat] = useState("md"), [sources, setSources] = useState(true), [questions, setQuestions] = useState(true);
+  if (error) return <Banner tone="error">{error}</Banner>;
+  if (!loaded) return <div className="page-loading"><Loader2 className="spin" />准备导出预览…</div>;
+  if (!note) return <Empty title="找不到笔记" text="请先生成并保存一份笔记。"><Button onClick={() => router.push("/notes")}>返回</Button></Empty>;
+  const v = { ...current(note), title: note.title, course: note.course, tags: note.tags, revision: note.revision };
+  const text = format === "json" ? JSON.stringify(v, null, 2) : markdown(v, { sources, questions });
+  return <div className="export-page page-enter"><button className="back-link" onClick={() => router.push(`/notes/${id}`)}><ArrowLeft size={16} />返回笔记详情</button><div className="page-heading"><div><div className="eyebrow">TAKE YOUR KNOWLEDGE WITH YOU</div><h1>把知识，带到下一次学习。</h1><p>预览和下载使用同一个已保存版本，保留来源与补充标记。</p></div><Badge tone="green">已保存 · revision {note.revision}</Badge></div><div className="export-layout"><aside className="panel export-settings"><h2>选择导出格式</h2>{[{ id: "md", title: "Markdown", text: "继续在你喜欢的笔记工具里编辑", Icon: FileText }, { id: "json", title: "结构化 JSON", text: "完整备份，可恢复到本应用", Icon: Braces }, { id: "pdf", title: "打印 / 另存为 PDF", text: "打开浏览器打印对话框", Icon: Printer }].map(f => <button className={`format-card ${format === f.id ? "selected" : ""}`} key={f.id} onClick={() => setFormat(f.id)}><f.Icon size={22} /><div><strong>{f.title}</strong><span>{f.text}</span></div><span className="format-check">{format === f.id && <Check size={14} />}</span></button>)}<div className="export-options"><h3>包含的内容</h3><label className="checkbox-line"><input type="checkbox" checked disabled />摘要、关键点和知识块</label><label className="checkbox-line"><input type="checkbox" checked={format === "json" || sources} disabled={format === "json"} onChange={e => setSources(e.target.checked)} />来源清单与原文快照</label><label className="checkbox-line"><input type="checkbox" checked={format === "json" || questions} disabled={format === "json"} onChange={e => setQuestions(e.target.checked)} />自测问题</label><label className="checkbox-line"><input type="checkbox" checked disabled />增强标记、置信度和未解决项</label></div><div className="export-filename"><span>文件名称</span><strong>{filename(v, format)}</strong></div><Button className="download-button" onClick={() => { try { if (format === "pdf") window.print(); else { download(text, filename(v, format), format === "json" ? "application/json;charset=utf-8" : "text/markdown;charset=utf-8"); notify("已发起下载，请查看浏览器下载列表。"); } } catch { notify("无法发起下载，请重试。", true); } }}>{format === "pdf" ? <Printer size={17} /> : <Download size={17} />}{format === "pdf" ? "打开打印对话框" : "下载笔记"}</Button><p className="export-tip"><ShieldCheck size={14} />JSON 备份不包含原始大文件；保留来源文字快照。</p></aside><section className="export-preview"><div className="export-preview-head"><div><span className="preview-dot" /><strong>内容预览</strong><Badge>{format.toUpperCase()}</Badge></div><span>{text.length.toLocaleString()} 字符</span></div><div className={`export-paper export-print ${format === "json" ? "json-paper" : ""}`}>{format === "json" ? <pre>{text}</pre> : <><div className="export-paper-meta">LECTURE2NOTES · {v.mode === "faithful" ? "忠实整理" : "学习增强"}</div><h1>{v.title}</h1><p className="muted">{v.course || "未分类课程"} · revision {note.revision}</p><Markdown text={text.replace(/^# [^\n]+\n/, "")} /></>}</div></section></div></div>;
+}
